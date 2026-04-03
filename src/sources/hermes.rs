@@ -13,13 +13,93 @@ impl HermesSource {
         Self { db_path }
     }
 
-    fn open_db(&self) -> Result<Connection> {
+fn open_db(&self) -> Result<Connection> {
         let conn = Connection::open_with_flags(
             &self.db_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .with_context(|| format!("Failed to open Hermes DB: {:?}", self.db_path))?;
         Ok(conn)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn create_test_db(path: &std::path::Path) -> Result<()> {
+        let conn = Connection::open(path)?;
+        conn.execute_batch(
+            "CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                message_count INTEGER,
+                started_at REAL,
+                ended_at REAL
+            );
+            CREATE TABLE messages (
+                session_id TEXT,
+                role TEXT,
+                content TEXT,
+                timestamp REAL,
+                tool_name TEXT
+            );",
+        )?;
+
+        conn.execute(
+            "INSERT INTO sessions (id, title, message_count, started_at, ended_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["s1", "Session One", 5i64, 1.0f64, 5.0f64],
+        )?;
+        conn.execute(
+            "INSERT INTO sessions (id, title, message_count, started_at, ended_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params!["s2", "Session Two", 1i64, 10.0f64, 11.0f64],
+        )?;
+
+        let messages = vec![
+            ("s1", "user", "hello", 1.0, Option::<String>::None),
+            ("s1", "assistant", "hi there", 2.0, Option::<String>::None),
+            ("s1", "user", "use tool", 3.0, Option::<String>::None),
+            ("s1", "assistant", "running", 4.0, Option::<String>::None),
+            ("s1", "tool", "{\"ok\":true}", 5.0, Some("fetch".to_string())),
+            ("s2", "user", "another session", 10.0, Option::<String>::None),
+        ];
+
+        for (sid, role, content, ts, tool_name) in messages {
+            conn.execute(
+                "INSERT INTO messages (session_id, role, content, timestamp, tool_name)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![sid, role, content, ts, tool_name],
+            )?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn scan_and_load_from_sqlite() -> Result<()> {
+        let dir = tempdir()?;
+        let db_path = dir.path().join("state.db");
+        create_test_db(&db_path)?;
+
+        let source = HermesSource::new(db_path);
+        let mut metas = source.scan()?;
+        metas.sort_by(|a, b| a.item_id.cmp(&b.item_id));
+
+        assert_eq!(metas.len(), 2);
+        assert_eq!(metas[0].item_id, "s1");
+        assert_eq!(metas[0].fingerprint, "5:5");
+        assert_eq!(metas[1].item_id, "s2");
+
+        let chunks = source.load("s1")?;
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].title.as_deref(), Some("Session One"));
+        assert!(chunks[0].content.contains("user: hello"));
+        assert!(chunks[0].content.contains("assistant: hi there"));
+        assert!(chunks[1].content.contains("user: use tool"));
+        assert!(chunks[1].content.contains("[tool:fetch] {\"ok\":true}"));
+        Ok(())
     }
 }
 

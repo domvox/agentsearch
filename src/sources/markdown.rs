@@ -119,3 +119,34 @@ impl Source for MarkdownSource {
         }])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn resolves_glob_extracts_title_and_date() -> Result<()> {
+        let dir = tempdir()?;
+        let note_path = dir.path().join("SESJA-2026-04-01.md");
+        std::fs::write(&note_path, "# Sprint Log\n\nSome note text.")?;
+
+        let source = MarkdownSource::new(vec![format!("{}/*.md", dir.path().display())]);
+        let metas = source.scan()?;
+        assert_eq!(metas.len(), 1);
+
+        let chunks = source.load(&metas[0].item_id)?;
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].title.as_deref(), Some("Sprint Log"));
+        assert_eq!(chunks[0].kind, ItemKind::Note);
+
+        let expected_ts = chrono::NaiveDate::from_ymd_opt(2026, 4, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        assert_eq!(chunks[0].timestamp, expected_ts);
+        Ok(())
+    }
+}
