@@ -51,3 +51,4 @@ pub mod hermes;
 pub mod markdown;
 pub mod moltis;
 pub mod nanobot;
+pub mod pi;

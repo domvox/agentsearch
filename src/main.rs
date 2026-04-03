@@ -10,7 +10,7 @@ use config::AppConfig;
 use index::SearchIndex;
 use sources::{
     hermes::HermesSource, markdown::MarkdownSource, moltis::MoltisSource, nanobot::NanobotSource,
-    Source,
+    pi::PiSource, Source,
 };
 
 #[derive(Parser)]
@@ -91,6 +91,12 @@ fn build_sources(config: &AppConfig) -> Vec<Box<dyn Source>> {
     // Markdown notes
     if config.notes.enabled {
         sources.push(Box::new(MarkdownSource::new(config.notes.globs.clone())));
+    }
+
+    // Pi coding agent
+    let pi_dir = resolve_path("~/.pi/agent/sessions");
+    if pi_dir.exists() {
+        sources.push(Box::new(PiSource::new(pi_dir)));
     }
 
     sources
