@@ -45,7 +45,10 @@ agentsearch search "KSeF auth" --source hermes
 agentsearch search "error" --limit 5
 
 # JSON output (for jq, fzf, scripts)
-agentsearch search "auth" --json
+agentsearch search "auth" --format json
+
+# Minimal output (one line per hit)
+agentsearch search "auth" --format minimal
 
 # Show indexed sources and counts
 agentsearch sources
@@ -53,6 +56,30 @@ agentsearch sources
 # Health check (exit 0 = healthy, exit 1 = no index)
 agentsearch health
 ```
+
+## Config
+
+Optional config file: `~/.config/agentsearch/config.toml`.
+
+```toml
+[hermes]
+enabled = true
+path = "~/.hermes/state.db"
+
+[moltis]
+enabled = true
+path = "~/.moltis/sessions/main.jsonl"
+
+[nanobot]
+enabled = true
+path = "~/.nanobot/workspace/sessions"
+
+[notes]
+enabled = true
+globs = ["~/SESJA-*.md", "~/INFRA-*.md"]
+```
+
+Set `enabled = false` to disable a source, or override any path/glob values.
 
 ## Source Detection
 
@@ -89,7 +116,7 @@ src/
 └── sources/
     ├── mod.rs           # Source trait, ItemChunk, ItemKind
     ├── hermes.rs        # Hermes Agent (SQLite reader)
-    ├── moltis.rs        # Moltis/Zeroclaw (JSONL stream parser)
+    ├── moltis.rs        # Moltis/Zeroclaw (cached JSONL parser)
     ├── nanobot.rs       # Nanobot (per-file JSONL)
     └── markdown.rs      # Markdown notes + memory files
 ```

@@ -1,15 +1,23 @@
+mod config;
 mod index;
 mod sources;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+use config::AppConfig;
 use index::SearchIndex;
-use sources::{hermes::HermesSource, markdown::MarkdownSource, moltis::MoltisSource, nanobot::NanobotSource, Source};
+use sources::{
+    hermes::HermesSource, markdown::MarkdownSource, moltis::MoltisSource, nanobot::NanobotSource,
+    Source,
+};
 
 #[derive(Parser)]
-#[command(name = "agentsearch", about = "Search across AI agent sessions and notes")]
+#[command(
+    name = "agentsearch",
+    about = "Search across AI agent sessions and notes"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -32,9 +40,9 @@ enum Commands {
         /// Max results
         #[arg(long, default_value = "10")]
         limit: usize,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
+        /// Output format
+        #[arg(long, value_enum, default_value = "text")]
+        format: OutputFormat,
     },
     /// Show indexed sources and counts
     Sources,
@@ -42,44 +50,48 @@ enum Commands {
     Health,
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum OutputFormat {
+    Text,
+    Json,
+    Minimal,
+}
+
 fn resolve_path(p: &str) -> PathBuf {
     PathBuf::from(shellexpand::tilde(p).to_string())
 }
 
-fn build_sources() -> Vec<Box<dyn Source>> {
+fn build_sources(config: &AppConfig) -> Vec<Box<dyn Source>> {
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
 
     // Hermes
-    let hermes_db = resolve_path("~/.hermes/state.db");
-    if hermes_db.exists() {
-        sources.push(Box::new(HermesSource::new(hermes_db)));
+    if config.hermes.enabled {
+        let hermes_db = resolve_path(&config.hermes.path);
+        if hermes_db.exists() {
+            sources.push(Box::new(HermesSource::new(hermes_db)));
+        }
     }
 
     // Moltis
-    let moltis_jsonl = resolve_path("~/.moltis/sessions/main.jsonl");
-    if moltis_jsonl.exists() {
-        sources.push(Box::new(MoltisSource::new(moltis_jsonl)));
+    if config.moltis.enabled {
+        let moltis_jsonl = resolve_path(&config.moltis.path);
+        if moltis_jsonl.exists() {
+            sources.push(Box::new(MoltisSource::new(moltis_jsonl)));
+        }
     }
 
     // Nanobot
-    let nanobot_dir = resolve_path("~/.nanobot/workspace/sessions");
-    if nanobot_dir.exists() {
-        sources.push(Box::new(NanobotSource::new(nanobot_dir)));
+    if config.nanobot.enabled {
+        let nanobot_dir = resolve_path(&config.nanobot.path);
+        if nanobot_dir.exists() {
+            sources.push(Box::new(NanobotSource::new(nanobot_dir)));
+        }
     }
 
     // Markdown notes
-    let md_globs = vec![
-        "~/SESJA-*.md".into(),
-        "~/INFRA-*.md".into(),
-        "~/RESEARCH-*.md".into(),
-        "~/CHANGELOG-*.md".into(),
-        "~/.hermes/memories/MEMORY.md".into(),
-        "~/.hermes/memories/USER.md".into(),
-        "~/.nanobot/workspace/memory/MEMORY.md".into(),
-        "~/.nanobot/workspace/memory/HISTORY.md".into(),
-        "~/.moltis/SOUL.md".into(),
-    ];
-    sources.push(Box::new(MarkdownSource::new(md_globs)));
+    if config.notes.enabled {
+        sources.push(Box::new(MarkdownSource::new(config.notes.globs.clone())));
+    }
 
     sources
 }
@@ -89,10 +101,11 @@ fn main() -> Result<()> {
     let data_dir = resolve_path(&cli.data_dir);
     std::fs::create_dir_all(&data_dir)?;
     let idx = SearchIndex::new(data_dir.clone());
+    let config = AppConfig::load()?;
 
     match cli.command {
         Commands::Index => {
-            let sources = build_sources();
+            let sources = build_sources(&config);
             println!("Indexing {} source(s)...", sources.len());
             for s in &sources {
                 println!("  - {}", s.name());
@@ -103,32 +116,63 @@ fn main() -> Result<()> {
                 stats.indexed, stats.skipped, stats.removed, stats.chunks, stats.errors
             );
         }
-        Commands::Search { query, source, limit, json } => {
+        Commands::Search {
+            query,
+            source,
+            limit,
+            format,
+        } => {
             let hits = idx.search(&query, source.as_deref(), limit)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&hits)?);
-            } else {
-                if hits.is_empty() {
-                    println!("No results for \"{}\"", query);
-                    return Ok(());
+            match format {
+                OutputFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&hits)?);
                 }
-                for hit in &hits {
-                    let ts = chrono::DateTime::from_timestamp_millis(hit.timestamp)
-                        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                        .unwrap_or_default();
-                    println!(
-                        "\x1b[1m[{}]\x1b[0m \x1b[36m{}\x1b[0m {} \x1b[2m(score: {:.2}, {})\x1b[0m",
-                        hit.source,
-                        if hit.title.is_empty() { &hit.item_id } else { &hit.title },
-                        if !hit.path.is_empty() { format!("\x1b[2m{}\x1b[0m", hit.path) } else { String::new() },
-                        hit.score,
-                        ts,
-                    );
-                    // Strip HTML tags from snippet for terminal display
-                    let plain = hit.snippet
-                        .replace("<b>", "\x1b[1;33m")
-                        .replace("</b>", "\x1b[0m");
-                    println!("  {}\n", plain);
+                OutputFormat::Minimal => {
+                    for hit in &hits {
+                        println!(
+                            "{}\t{}\t{}\t{:.2}",
+                            hit.source,
+                            if hit.title.is_empty() {
+                                &hit.item_id
+                            } else {
+                                &hit.title
+                            },
+                            hit.path,
+                            hit.score,
+                        );
+                    }
+                }
+                OutputFormat::Text => {
+                    if hits.is_empty() {
+                        println!("No results for \"{}\"", query);
+                        return Ok(());
+                    }
+                    for hit in &hits {
+                        let ts = chrono::DateTime::from_timestamp_millis(hit.timestamp)
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_default();
+                        println!(
+                            "\x1b[1m[{}]\x1b[0m \x1b[36m{}\x1b[0m {} \x1b[2m(score: {:.2}, {})\x1b[0m",
+                            hit.source,
+                            if hit.title.is_empty() {
+                                &hit.item_id
+                            } else {
+                                &hit.title
+                            },
+                            if !hit.path.is_empty() {
+                                format!("\x1b[2m{}\x1b[0m", hit.path)
+                            } else {
+                                String::new()
+                            },
+                            hit.score,
+                            ts,
+                        );
+                        let plain = hit
+                            .snippet
+                            .replace("<b>", "\x1b[1;33m")
+                            .replace("</b>", "\x1b[0m");
+                        println!("  {}\n", plain);
+                    }
                 }
             }
         }

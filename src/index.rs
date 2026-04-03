@@ -8,7 +8,7 @@ use tantivy::schema::*;
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{doc, Index, IndexWriter, ReloadPolicy, TantivyDocument};
 
-use crate::sources::{ItemChunk, Source, SourceItemMeta};
+use crate::sources::Source;
 
 pub struct SearchIndex {
     data_dir: PathBuf,
@@ -18,8 +18,7 @@ fn build_schema() -> Schema {
     let mut builder = Schema::builder();
     let text_opts = TextOptions::default()
         .set_indexing_options(
-            TextFieldIndexing::default()
-                .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+            TextFieldIndexing::default().set_index_option(IndexRecordOption::WithFreqsAndPositions),
         )
         .set_stored();
     builder.add_text_field("item_id", STRING | STORED);
@@ -110,7 +109,8 @@ impl SearchIndex {
                         }
 
                         // Delete old chunks
-                        writer.delete_term(tantivy::Term::from_field_text(f_item_id, &meta.item_id));
+                        writer
+                            .delete_term(tantivy::Term::from_field_text(f_item_id, &meta.item_id));
 
                         match source.load(&meta.item_id) {
                             Ok(chunks) => {
@@ -130,7 +130,12 @@ impl SearchIndex {
                                     stats.chunks += 1;
                                 }
                                 stats.indexed += 1;
-                                self.save_fingerprint(&state, source_name, &meta.item_id, &meta.fingerprint)?;
+                                self.save_fingerprint(
+                                    &state,
+                                    source_name,
+                                    &meta.item_id,
+                                    &meta.fingerprint,
+                                )?;
                             }
                             Err(e) => {
                                 eprintln!("  WARN: {}/{}: {}", source_name, meta.item_id, e);
@@ -162,15 +167,28 @@ impl SearchIndex {
         Ok(stats)
     }
 
-    fn load_fingerprints(&self, conn: &Connection, source: &str) -> Result<HashMap<String, String>> {
-        let mut stmt = conn.prepare("SELECT item_id, fingerprint FROM sync_state WHERE source = ?1")?;
+    fn load_fingerprints(
+        &self,
+        conn: &Connection,
+        source: &str,
+    ) -> Result<HashMap<String, String>> {
+        let mut stmt =
+            conn.prepare("SELECT item_id, fingerprint FROM sync_state WHERE source = ?1")?;
         let map = stmt
-            .query_map([source], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+            .query_map([source], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
             .collect::<Result<HashMap<_, _>, _>>()?;
         Ok(map)
     }
 
-    fn save_fingerprint(&self, conn: &Connection, source: &str, item_id: &str, fingerprint: &str) -> Result<()> {
+    fn save_fingerprint(
+        &self,
+        conn: &Connection,
+        source: &str,
+        item_id: &str,
+        fingerprint: &str,
+    ) -> Result<()> {
         conn.execute(
             "INSERT OR REPLACE INTO sync_state (source, item_id, fingerprint) VALUES (?1, ?2, ?3)",
             rusqlite::params![source, item_id, fingerprint],
@@ -178,11 +196,19 @@ impl SearchIndex {
         Ok(())
     }
 
-    pub fn search(&self, query: &str, source_filter: Option<&str>, limit: usize) -> Result<Vec<SearchHit>> {
+    pub fn search(
+        &self,
+        query: &str,
+        source_filter: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>> {
         let index = Index::open_in_dir(self.index_path())
             .context("Index not found. Run `agentsearch index` first.")?;
         let schema = index.schema();
-        let reader = index.reader_builder().reload_policy(ReloadPolicy::Manual).try_into()?;
+        let reader = index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
         let searcher = reader.searcher();
 
         let f_title = schema.get_field("title").unwrap();
@@ -197,7 +223,8 @@ impl SearchIndex {
         let query_parser = QueryParser::for_index(&index, vec![f_title, f_content]);
         let parsed = query_parser.parse_query(query)?;
 
-        let top_docs = searcher.search(&parsed, &TopDocs::with_limit(limit * 3).order_by_score())?;
+        let top_docs =
+            searcher.search(&parsed, &TopDocs::with_limit(limit * 3).order_by_score())?;
 
         let mut snippet_gen = SnippetGenerator::create(&searcher, &*parsed, f_content)?;
         snippet_gen.set_max_num_chars(300);
@@ -207,7 +234,10 @@ impl SearchIndex {
         for (score, doc_addr) in top_docs {
             let doc: TantivyDocument = searcher.doc(doc_addr)?;
 
-            let source_val = doc.get_first(f_source).and_then(|v| v.as_str()).unwrap_or("");
+            let source_val = doc
+                .get_first(f_source)
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if let Some(filter) = source_filter {
                 if source_val != filter {
                     continue;
@@ -219,22 +249,51 @@ impl SearchIndex {
             let snippet_text = if snippet_html.is_empty() {
                 doc.get_first(f_content)
                     .and_then(|v| v.as_str())
-                    .map(|s| if s.len() > 200 { format!("{}...", &s[..200]) } else { s.to_string() })
+                    .map(|s| {
+                        if s.len() > 200 {
+                            format!("{}...", &s[..200])
+                        } else {
+                            s.to_string()
+                        }
+                    })
                     .unwrap_or_default()
             } else {
                 snippet_html
             };
 
             hits.push(SearchHit {
-                item_id: doc.get_first(f_item_id).and_then(|v| v.as_str()).unwrap_or("").into(),
-                chunk_id: doc.get_first(f_chunk_id).and_then(|v| v.as_str()).unwrap_or("").into(),
+                item_id: doc
+                    .get_first(f_item_id)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .into(),
+                chunk_id: doc
+                    .get_first(f_chunk_id)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .into(),
                 source: source_val.into(),
-                kind: doc.get_first(f_kind).and_then(|v| v.as_str()).unwrap_or("").into(),
-                title: doc.get_first(f_title).and_then(|v| v.as_str()).unwrap_or("").into(),
+                kind: doc
+                    .get_first(f_kind)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .into(),
+                title: doc
+                    .get_first(f_title)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .into(),
                 snippet: snippet_text,
                 score,
-                timestamp: doc.get_first(f_timestamp).and_then(|v| v.as_i64()).unwrap_or(0),
-                path: doc.get_first(f_path).and_then(|v| v.as_str()).unwrap_or("").into(),
+                timestamp: doc
+                    .get_first(f_timestamp)
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0),
+                path: doc
+                    .get_first(f_path)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .into(),
             });
 
             if hits.len() >= limit {
@@ -249,7 +308,9 @@ impl SearchIndex {
         let state = self.open_state()?;
         let mut stmt = state.prepare("SELECT source, COUNT(*) FROM sync_state GROUP BY source")?;
         let stats = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(stats)
     }
