@@ -169,3 +169,40 @@ fn format_tool_calls(tools: &serde_json::Value) -> String {
         String::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn parses_session_jsonl_with_metadata_and_messages() -> Result<()> {
+        let dir = tempdir()?;
+        let file_path = dir.path().join("session-1.jsonl");
+        let mut file = std::fs::File::create(&file_path)?;
+        writeln!(file, "{}", serde_json::json!({"_type":"metadata","version":"1"}))?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"role":"user","content":"How are you?","timestamp":"2026-04-01T10:00:00.000"})
+        )?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"role":"assistant","content":"Doing great.","timestamp":"2026-04-01T10:00:01.000"})
+        )?;
+
+        let source = NanobotSource::new(dir.path().to_path_buf());
+        let metas = source.scan()?;
+        assert_eq!(metas.len(), 1);
+        let item_id = metas[0].item_id.clone();
+
+        let chunks = source.load(&item_id)?;
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].title.as_deref(), Some("How are you?"));
+        assert!(chunks[0].content.contains("user: How are you?"));
+        assert!(chunks[0].content.contains("assistant: Doing great."));
+        Ok(())
+    }
+}

@@ -203,3 +203,53 @@ impl Source for PiSource {
         Ok(chunks)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn parses_pi_events_and_keeps_only_messages() -> Result<()> {
+        let dir = tempdir()?;
+        let nested = dir.path().join("project-a");
+        std::fs::create_dir_all(&nested)?;
+        let path = nested.join("session.jsonl");
+        let mut file = std::fs::File::create(&path)?;
+
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"type":"session","timestamp":"2026-04-01T12:00:00Z","cwd":"/tmp/project"})
+        )?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"type":"model_change","timestamp":"2026-04-01T12:00:01Z","modelId":"gpt-5"})
+        )?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"type":"message","timestamp":"2026-04-01T12:00:02Z","message":{"role":"user","content":"Plan tests"}})
+        )?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"type":"message","timestamp":"2026-04-01T12:00:03Z","message":{"role":"assistant","content":[{"type":"text","text":"Done"}]}})
+        )?;
+
+        let source = PiSource::new(dir.path().to_path_buf());
+        let metas = source.scan()?;
+        assert_eq!(metas.len(), 1);
+
+        let chunks = source.load(&metas[0].item_id)?;
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].title.as_deref(), Some("Plan tests"));
+        assert_eq!(chunks[0].path.as_deref(), Some("/tmp/project"));
+        assert!(chunks[0].content.contains("user: Plan tests"));
+        assert!(chunks[0].content.contains("assistant: Done"));
+        assert!(!chunks[0].content.contains("model_change"));
+        Ok(())
+    }
+}

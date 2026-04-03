@@ -337,3 +337,84 @@ pub struct SearchHit {
     pub timestamp: i64,
     pub path: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sources::{ItemChunk, ItemKind, Source, SourceItemMeta};
+    use tempfile::tempdir;
+
+    struct TestSource {
+        name: String,
+        metas: Vec<SourceItemMeta>,
+        chunks: HashMap<String, Vec<ItemChunk>>,
+    }
+
+    impl Source for TestSource {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn scan(&self) -> Result<Vec<SourceItemMeta>> {
+            Ok(self.metas.clone())
+        }
+
+        fn load(&self, item_id: &str) -> Result<Vec<ItemChunk>> {
+            Ok(self.chunks.get(item_id).cloned().unwrap_or_default())
+        }
+    }
+
+    #[test]
+    fn full_index_and_search_cycle() -> Result<()> {
+        let dir = tempdir()?;
+        let idx = SearchIndex::new(dir.path().to_path_buf());
+
+        let item_id = "item-1".to_string();
+        let chunks = vec![
+            ItemChunk {
+                item_id: item_id.clone(),
+                chunk_id: "c1".into(),
+                source: "test".into(),
+                kind: ItemKind::Session,
+                title: Some("Rust indexing".into()),
+                timestamp: 1_711_929_600_000,
+                ordinal: 0,
+                content: "user: tantivy search rust snippet".into(),
+                role: Some("user".into()),
+                path: Some("/tmp/a".into()),
+            },
+            ItemChunk {
+                item_id: item_id.clone(),
+                chunk_id: "c2".into(),
+                source: "test".into(),
+                kind: ItemKind::Session,
+                title: Some("Other".into()),
+                timestamp: 1_711_929_700_000,
+                ordinal: 1,
+                content: "assistant: unrelated text".into(),
+                role: Some("assistant".into()),
+                path: Some("/tmp/b".into()),
+            },
+        ];
+        let source = TestSource {
+            name: "test".into(),
+            metas: vec![SourceItemMeta {
+                item_id: item_id.clone(),
+                fingerprint: "fp-1".into(),
+            }],
+            chunks: HashMap::from([(item_id.clone(), chunks)]),
+        };
+
+        let boxed: Vec<Box<dyn Source>> = vec![Box::new(source)];
+        let stats = idx.index_sources(&boxed)?;
+        assert_eq!(stats.indexed, 1);
+        assert_eq!(stats.chunks, 2);
+
+        let hits = idx.search("tantivy", Some("test"), 5)?;
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].source, "test");
+        assert!(hits[0].score > 0.0);
+        assert!(hits[0].snippet.contains("tantivy") || hits[0].snippet.contains("<b>"));
+        Ok(())
+    }
+}

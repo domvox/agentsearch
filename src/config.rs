@@ -137,3 +137,62 @@ fn default_notes_globs() -> Vec<String> {
         "~/.moltis/SOUL.md".into(),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_values_are_set() {
+        let cfg = AppConfig::default();
+        assert!(cfg.hermes.enabled);
+        assert!(cfg.moltis.enabled);
+        assert!(cfg.nanobot.enabled);
+        assert!(cfg.notes.enabled);
+        assert!(cfg.hermes.path.contains(".hermes/state.db"));
+        assert!(!cfg.notes.globs.is_empty());
+    }
+
+    #[test]
+    fn loads_from_toml_string() -> Result<()> {
+        let raw = r#"
+            [hermes]
+            enabled = false
+            path = "/tmp/hermes.db"
+
+            [moltis]
+            path = "/tmp/main.jsonl"
+
+            [notes]
+            globs = ["/tmp/*.md"]
+        "#;
+
+        let cfg: AppConfig = toml::from_str(raw)?;
+        assert!(!cfg.hermes.enabled);
+        assert_eq!(cfg.hermes.path, "/tmp/hermes.db");
+        assert!(cfg.moltis.enabled);
+        assert_eq!(cfg.moltis.path, "/tmp/main.jsonl");
+        assert_eq!(cfg.notes.globs, vec!["/tmp/*.md"]);
+        Ok(())
+    }
+
+    #[test]
+    fn disabled_sources_are_respected_in_parsed_config() -> Result<()> {
+        let raw = r#"
+            [hermes]
+            enabled = false
+            [moltis]
+            enabled = false
+            [nanobot]
+            enabled = false
+            [notes]
+            enabled = false
+        "#;
+        let cfg: AppConfig = toml::from_str(raw)?;
+        assert!(!cfg.hermes.enabled);
+        assert!(!cfg.moltis.enabled);
+        assert!(!cfg.nanobot.enabled);
+        assert!(!cfg.notes.enabled);
+        Ok(())
+    }
+}

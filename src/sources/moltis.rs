@@ -204,3 +204,59 @@ fn make_chunk(item_id: &str, ordinal: u32, ts: i64, content: &str) -> ItemChunk 
         path: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn parses_main_jsonl_grouping_and_chunk_boundaries() -> Result<()> {
+        let dir = tempdir()?;
+        let path = dir.path().join("main.jsonl");
+        let mut file = std::fs::File::create(&path)?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"run_id":"run-a","role":"assistant","content":"answer 1","created_at":2,"seq":2})
+        )?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"run_id":"run-a","role":"user","content":"question 1","created_at":1,"seq":1})
+        )?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"run_id":"run-a","role":"user","content":"question 2","created_at":3,"seq":3})
+        )?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"run_id":"run-b","role":"user","content":"run b prompt","created_at":10,"seq":1})
+        )?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"run_id":"run-b","role":"tool_result","tool_name":"lookup","result":{"ok":true},"created_at":11,"seq":2})
+        )?;
+
+        let source = MoltisSource::new(path);
+        let metas = source.scan()?;
+        assert_eq!(metas.len(), 2);
+        assert!(metas.iter().any(|m| m.item_id == "run-a"));
+        assert!(metas.iter().any(|m| m.item_id == "run-b"));
+
+        let run_a = source.load("run-a")?;
+        assert_eq!(run_a.len(), 2);
+        assert!(run_a[0].content.starts_with("user: question 1"));
+        assert!(run_a[0].content.contains("assistant: answer 1"));
+        assert!(run_a[1].content.contains("user: question 2"));
+
+        let run_b = source.load("run-b")?;
+        assert_eq!(run_b.len(), 1);
+        assert!(run_b[0].content.contains("[tool:lookup]"));
+        Ok(())
+    }
+}
