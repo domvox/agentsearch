@@ -153,31 +153,54 @@ fn main() -> Result<()> {
                         println!("No results for \"{}\"", query);
                         return Ok(());
                     }
-                    for hit in &hits {
+                    for (i, hit) in hits.iter().enumerate() {
                         let ts = chrono::DateTime::from_timestamp_millis(hit.timestamp)
                             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
                             .unwrap_or_default();
-                        println!(
-                            "\x1b[1m[{}]\x1b[0m \x1b[36m{}\x1b[0m {} \x1b[2m(score: {:.2}, {})\x1b[0m",
-                            hit.source,
-                            if hit.title.is_empty() {
-                                &hit.item_id
-                            } else {
-                                &hit.title
-                            },
-                            if !hit.path.is_empty() {
-                                format!("\x1b[2m{}\x1b[0m", hit.path)
-                            } else {
-                                String::new()
-                            },
-                            hit.score,
-                            ts,
-                        );
+                        let title = if hit.title.is_empty() {
+                            &hit.item_id
+                        } else {
+                            &hit.title
+                        };
+                        // Truncate title to 60 chars
+                        let title_short: String = title.chars().take(60).collect();
+
+                        // Header line
+                        print!("\x1b[1;32m{:>2}.\x1b[0m ", i + 1);
+                        print!("\x1b[1m[{}]\x1b[0m ", hit.source);
+                        print!("\x1b[36m{}\x1b[0m", title_short);
+                        if !hit.path.is_empty() {
+                            print!("  \x1b[2m{}\x1b[0m", hit.path);
+                        }
+                        println!();
+
+                        // Score + date line
+                        println!("    \x1b[2m{:.1} pts · {}\x1b[0m", hit.score, ts);
+
+                        // Snippet: clean up, limit to 2 lines
                         let plain = hit
                             .snippet
                             .replace("<b>", "\x1b[1;33m")
-                            .replace("</b>", "\x1b[0m");
-                        println!("  {}\n", plain);
+                            .replace("</b>", "\x1b[0m")
+                            .replace("&amp;", "&")
+                            .replace("&lt;", "<")
+                            .replace("&gt;", ">")
+                            .replace("&quot;", "\"")
+                            .replace("\\n", " ");
+                        // Take first 200 chars, clean whitespace
+                        let snippet_clean: String = plain
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let snippet_short: String = if snippet_clean.len() > 200 {
+                            let mut end = 200;
+                            while !snippet_clean.is_char_boundary(end) { end -= 1; }
+                            format!("{}…", &snippet_clean[..end])
+                        } else {
+                            snippet_clean
+                        };
+                        println!("    {}", snippet_short);
+                        println!();
                     }
                 }
             }
