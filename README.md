@@ -76,10 +76,20 @@ path = "~/.nanobot/workspace/sessions"
 
 [notes]
 enabled = true
-globs = ["~/SESJA-*.md", "~/INFRA-*.md"]
+globs = [
+  "~/SESJA-*.md",
+  "~/INFRA-*.md",
+  "~/RESEARCH-*.md",
+  "~/CHANGELOG-*.md",
+  "~/.hermes/memories/MEMORY.md",
+  "~/.hermes/memories/USER.md",
+  "~/.nanobot/workspace/memory/MEMORY.md",
+  "~/.nanobot/workspace/memory/HISTORY.md",
+  "~/.moltis/SOUL.md",
+]
 ```
 
-Set `enabled = false` to disable a source, or override any path/glob values.
+These are the defaults — set `enabled = false` to disable a source, or override any path/glob values.
 
 ## Source Detection
 
@@ -90,7 +100,7 @@ Sources are auto-detected based on standard paths:
 | Hermes | `~/.hermes/state.db` | SQLite (sessions + messages tables) |
 | Moltis | `~/.moltis/sessions/main.jsonl` | JSONL grouped by `run_id` |
 | Nanobot | `~/.nanobot/workspace/sessions/*.jsonl` | JSONL per session file |
-| Notes | `~/SESJA-*.md`, `~/INFRA-*.md`, etc. | Markdown files |
+| Notes | `~/SESJA-*.md`, `~/INFRA-*.md`, `~/RESEARCH-*.md`, `~/CHANGELOG-*.md`, + memory files | Markdown files |
 
 ## How It Works
 
