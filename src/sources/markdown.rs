@@ -36,7 +36,7 @@ impl MarkdownSource {
 
     fn extract_date_from_filename(path: &std::path::Path) -> Option<i64> {
         let stem = path.file_stem()?.to_str()?;
-        // Match SESJA-YYYY-MM-DD or similar patterns with date
+        // Match SESSION-YYYY-MM-DD or similar patterns with date
         let re_patterns = ["2026-", "2025-", "2024-"];
         for pat in re_patterns {
             if let Some(pos) = stem.find(pat) {
@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn resolves_glob_extracts_title_and_date() -> Result<()> {
         let dir = tempdir()?;
-        let note_path = dir.path().join("SESJA-2026-04-01.md");
+        let note_path = dir.path().join("SESSION-2026-04-01.md");
         std::fs::write(&note_path, "# Sprint Log\n\nSome note text.")?;
 
         let source = MarkdownSource::new(vec![format!("{}/*.md", dir.path().display())]);

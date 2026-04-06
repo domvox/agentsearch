@@ -77,7 +77,7 @@ path = "~/.nanobot/workspace/sessions"
 [notes]
 enabled = true
 globs = [
-  "~/SESJA-*.md",
+  "~/SESSION-*.md",
   "~/INFRA-*.md",
   "~/RESEARCH-*.md",
   "~/CHANGELOG-*.md",
@@ -100,7 +100,7 @@ Sources are auto-detected based on standard paths:
 | Hermes | `~/.hermes/state.db` | SQLite (sessions + messages tables) |
 | Moltis | `~/.moltis/sessions/main.jsonl` | JSONL grouped by `run_id` |
 | Nanobot | `~/.nanobot/workspace/sessions/*.jsonl` | JSONL per session file |
-| Notes | `~/SESJA-*.md`, `~/INFRA-*.md`, `~/RESEARCH-*.md`, `~/CHANGELOG-*.md`, + memory files | Markdown files |
+| Notes | `~/SESSION-*.md`, `~/INFRA-*.md`, `~/RESEARCH-*.md`, `~/CHANGELOG-*.md`, + memory files | Markdown files |
 
 ## How It Works
 

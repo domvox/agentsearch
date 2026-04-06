@@ -126,7 +126,7 @@ fn default_nanobot_path() -> String {
 
 fn default_notes_globs() -> Vec<String> {
     vec![
-        "~/SESJA-*.md".into(),
+        "~/SESSION-*.md".into(),
         "~/INFRA-*.md".into(),
         "~/RESEARCH-*.md".into(),
         "~/CHANGELOG-*.md".into(),
